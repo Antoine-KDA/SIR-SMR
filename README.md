@@ -33,4 +33,12 @@ cohort average experience of the event during the follow-up compared
 with that of the reference population as a whole.
 
 In this post I will show three ways to estimate a SIR / SMR by indirect
-standardization from your cohort using R.
+standardization from your cohort using R. For a complete view of the
+project please visite :
+<https://rpubs.com/antoine-kossi/sir-analysis-with-r>
+
+To make a contribution, feel free to clone the rip and to share it.
+
+To report a comment you can email me
+[antoine.kossi@hotmail.com](antoine.kossi@hotmail.com) or to create an
+issue on github.
