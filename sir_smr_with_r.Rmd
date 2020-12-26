@@ -1,0 +1,553 @@
+---
+title: "Estimate Standardized Incidence (Mortality) Ratio (SIR/SMR) using R"
+author: "Kossi D. ABALO"
+date: 
+output: html_document
+---
+
+
+<!--- for tables outpout, I used knitr and kableExtra packages. For more documentation :
+http://haozhu233.github.io/kableExtra/awesome_table_in_html.html
+To install kableextra package use: 
+
+install.packages("kableExtra")
+
+# For dev version
+# install.packages("devtools")
+devtools::install_github("haozhu233/kableExtra")
+ --->
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+rm(list=ls())
+library(kableExtra)
+library(magrittr)
+library(dplyr)
+library(tidyverse)
+library(popEpi)
+library(DiagrammeR)
+library(biostat3)
+library(Epi)
+```
+
+# Introduction
+
+
+Standardized Incidence Ratio (SIR) or Standardized Mortality Ratio (SMR) are common measure of event occurrence in epidemiology. They are used to compare the occurrence of an event in a cohort to that observed in a given population called reference population.  
+SIR or SMR help the investigators to have a global idea on the occurrence of the event of interest in the followed population (the cohort).
+They are an indirect method of adjustment for a confounding factors (age, sex, calendar year etc.) that describes in numerical terms how the cohort average experience of the event during the follow-up compared with that of the reference population as a whole. A $SIR=2$ means that the occurrence of the event event in the cohort is 2 times higher than what is expected in the reference population. But caution, this does not mean any causality in regard of a give exposure in the cohort or a given risk factor for which the cohort is followed for.
+
+Mathematically SIR (SMR) is the ratio of observed events and expected events: 
+
+$$SIR = \frac{\sum d_j }{\sum n_j \lambda_j} = \frac{D}{E}$$
+
+where $D$ is the observed events in the cohort population and $E$ is the expected number of events.
+
+Observed events are the absolute number of events that occurred in the cohort during the follow up.
+
+The expected number of events are derived by multiplying the cohort person-years with reference **population rate**. The **population rate** should be stratified or adjusted by confounding factors (age or age group, gender, calendar period etc.). The reference **population rate** in strata $i$ ($\lambda_i$) is defined as: 
+$$\lambda_i = \frac{d_i}{n_i}$$ 
+where $d_i$ is the total observed events and $n_i$ is the total observed person years (or the size of the population) in the $i$th strata of the reference population.
+
+Univariate confidence intervals are based on exact values of Poisson distribution and the formula for p-value is $$ \chi^2 = \frac{ (|O - E| -0.5)^2 }{E}. $$ Modeled SIR is a Poisson regression model with log-link and cohorts person-years as a offset (we will come to that in the next sections).
+
+Let's have a quick look to some examples of cohort and reference data:
+
+```{r include=FALSE}
+
+cohort <- as.data.frame(cbind(
+  age_group = c("35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74"), 
+  Number_events = c(0, 1, 3, 5, 8, 8, 4, 1),
+  Pers_years = c(480, 587, 680, 541, 479, 356, 157, 36)))
+
+pop <- as.data.frame(cbind(
+  age_group = c("35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74"), 
+  Number_events = c(81, 177, 336, 434, 419, 599, 907, 925),
+  Pers_years = 3*c(27575, 28670, 26970, 21190, 13625, 17275, 17515, 14075)))
+
+class(pop$Pers_years) <- "numeric"
+class(pop$Number_events) <- "numeric" 
+class(cohort$Pers_years) <- "numeric"
+class(cohort$Number_events) <- "numeric" 
+
+as.numeric(as.character(pop$Number_events))
+
+pop$Rate <- pop$Number_events/pop$Pers_years
+
+```
+
+```{r}
+pop$Rate
+pop$Rate*100000
+```
+
+
+
+```{r Table1, echo=FALSE}
+cohort %>%
+  kbl(caption = "Table 1: Example of cohort data") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+In this first example @\ref(table:Table1): 
+
+  + *age_group* is the age group (confounding factor) for adjustment. Here we have only one confounding factor but feel free to add any other factors (age, gender, socio-economic factors, location, years etc.) you think necessary for your analyses and on which yours SIR/SMR will be adjusted. 
+  + The *Number_events* is the total number of events observed in the cohort by strata.
+  + The *Pers_years* is the total person-time recorded in the cohort for each strata.
+
+
+```{r Table2, echo=FALSE}
+pop %>%
+  kbl(caption = "Table 2: Example of population reference data") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+In this second example [Table 2](#Table2) : 
+
+  + *age_group* is the age group (confounding factor) for adjustment in the reference population. 
+  + The *Number_events* is the total number of events observed in the reference population $n_i$ for each strata of *age_group*.
+  + The *Pers_years* is the total the size of the reference population $n_i$ for each strata of *age_group*. 
+  + *Rate* is the rate of the event $\lambda_i$=$n_i$/$d_i$  in the reference population for each strata of *age_group*. 
+
+```
+Note: make sure the same variables with with the same labels and the same classes in both your cohort data and in your population or reference data.
+```
+From the [Table 2](#Table2), we can extract the Rate column to merge with the cohort data [Table 1](#Table1) and we can calculate the *Expected* number of events obtained as population reference *Rate* in the $i$th strata multiplied by the cohort $j$th strata *Pers_years*. This is expressed as : 
+
+$Expected$ = $n_i$*$\lambda_j$
+
+```{r include=FALSE}
+cohort %<>% 
+  inner_join(pop[ , c(1, 4)]) %>% 
+  mutate(Expected = Rate*Pers_years)
+```
+
+```{r Table3, echo=FALSE}
+
+list(cohort[ , c(1:3)], cohort[ , c(4, 5)]) %>%
+  kbl(caption = "Table 3: Calculate the expected number of cases in the cohort data", valign = "t", vline = " ", table.attr ='style="color:red"' ) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+
+```
+
+The final step is now to calculate the SIR value as sum of Number_events divided by the sum of number of Expected :
+
+\begin{equation} 
+\begin{split}
+  SIR &=\frac{\sum d_j }{\sum n_j \lambda_j} \\
+& = \frac{D}{E} \\
+& =\frac{(0+1+3+5+8+8+4+1)}{(0.4699909+1.207987+2.823878+3.693472+4.910116+4.114694+2.710039+0.7886323)} \\
+& = 1.44796
+\end{split}
+\end{equation} 
+
+```{r include=FALSE}
+cat(cohort$Expected, sep = "+")
+```
+
+
+```{r include=FALSE}
+sum(cohort$Number_events)/sum(cohort$Expected)
+
+(0+1+3+5+8+8+4+1)/(0.4699909+1.207987+2.823878+3.693472+4.910116+4.114694+2.710039+0.7886323)
+
+```
+
+<font color=blue> 
+**Interpretation : **
+
+In our example, $SIR = 1.45$ means that standardizing on the age group, incidence in our studied cohort is **1.45 times** higher than in the reference population.
+</font>
+
+# How to implement SIR analysis on R? 
+In this post, I will presente you three different way of SIR analyses on R. 
+ 
+First of all, let me remember you that raw data for a given study are never in the form we saw in the [Table 1](#Table1) and [Table 2](#Table2). Most the time, you ought to configure your data in way to obtain [Table 1](#Table1) and [Table 2](#Table2) as in our examples. I named this step of data manipulation or data configuration as a data management step. 
+
+Overall I will presente you the following steps: 
+
+
+```{r echo=FALSE}
+DiagrammeR::grViz("digraph {
+  graph [layout = dot, rankdir = TB]
+  
+  node [shape = rectangle]        
+  rec1 [label = 'Step 1. Data Management']
+  rec2 [label = 'Step 2. First Example']
+  rec3 [label =  'Step 3. Second Example']
+  rec4 [label = 'Step 4. Third Example']
+  
+  # edge definitions with the node IDs
+        
+  
+  rec1 -> rec2 
+  rec1 -> rec3
+  rec1 -> rec4
+  }", 
+  height = 100)
+```
+
+## 1 : Data management
+
+From this step up to the end, I will be using a simulated cohort data named *mySIR* and a simulated population reference data *my.pop.ref*.
+
+Using these data allows us only to compute SMR analysis with the research question: 
+
+**is the cancer incidence rate among females diagnosed with rectal cancer the same as that in the general population?**
+
+The cohort data simulated *mySIR* is on cancer occurrence in patients undergoing medical diagnostic ionizing radiation exposure from between 2000-2015. 
+
+These are variables from the *mySIR* database :
+
+- sex: the gender of the patient (1 = Male, 2 = female)
+
+- birth_date: the date of birth (date: dd-mm-yyyy)
+
+- entry_date: the date of exposure to ionizing radiation (date: dd-mm-yyyy)
+
+- exit_date: the date of exit from follow-up (death or censoring) (date: dd-mm-yyyy)
+
+- status: the status of the person at exit; 0 exit (or censored) without cancer; 1 diagnosed with cancer
+
+```{r include=FALSE}
+load("~/OneDrive - Aix-Marseille Université/Année 1 Thèse/Thèse Kossi/Analyse SIR/Analyse_SIR_V3_Article_Cohorte_Profile/base_these_kossi.Rdata")
+
+mySIR=base_sans_doublon[ , c("sexe", "ddn", "date_entree", "dd_exit_suivi", "statut")]
+colnames(mySIR) <- c("sex", "birth_date", "entry_date", "exit_date", "status")
+mySIR %<>% 
+  mutate(sex=ifelse(sex=="Male", 1, 2))
+
+```
+
+```{r echo=TRUE}
+glimpse(mySIR) 
+head(mySIR)
+```
+Overview of *mySIR* dataset : 
+```{r echo=FALSE}
+DT::datatable(mySIR, filter = 'top', options = list(pageLength = 5, autoWidth = TRUE))
+```
+
+From these variables in the dataset, let's create the following variables: 
+
+- age: the age at exit from the cohort (ex_date - bi_date).
+
+- year: the calendar year at exit from the cohort (ex_date - dg_date).
+
+- Follow_up : the duration of follow-up in years of each patient of the cohort (exit_date - entry_date).
+
+- age_exit : age at exit from the follow-up in years (exit_date - birth_date).
+
+```{r}
+
+mySIR %<>% 
+  mutate(year=format(exit_date, format="%Y"),# to extract only the year (YYYY) of exit from the follow-up
+         age_exit= cal.yr(exit_date) - cal.yr(birth_date), # using the function cal.yr from the package "Epi" to compute the age at exit from  the follow-up in years.
+        age = cut(age_exit, breaks = c(0, 1, 5, 10, 15, 20), # To create age groups, coded 1 for <1 year, 2 for 1 to 4 years, 3 for 5 to 9 years, 4 for 10 to 14 years and 5 for >= 15 years old. 
+                  labels = c(1, 2, 3, 4, 5), right = FALSE), 
+        Follow_up = (exit_date - entry_date)/365.25) # using the function cal.yr from the package "Epi" to compute the Follow-up in years.
+```
+
+
+The reference population data simulated *my.pop.ref* is on cancer incidence in the general population from 2000-2015, by age group and by gender. The followings could be found from the dataset :
+
+- sex: the gender of the patient (1 = Male, 2 = female)
+
+- year: calendar year (format "YYYY")
+
+- age: patients age group at cancer diagnosis, coded 1 for <1 year, 2 for 1 to 4 years, 3 for 5 to 9 years, 4 for 10 to 14 years and 5 for >= 15 years old.
+
+- Number_cases: the total number of cases ($n_i$) in each age, year and sex strata of the reference population data
+
+- Population: the size of the population ($d_i$) in each age, year and sex strata of the reference population data
+
+- Rate: the average population cancer incidence rate per person-year ($\lambda_i$=$n_i$/$d_i$), where $n_i$ is the number of deaths and $d_i$ is the person-years). $n_i$ and $d_i$ are not explicitly in the data set, we only the resultant rate $\lambda_i$.  
+
+
+
+```{r include=FALSE}
+#link <- "C:/Users/antoi/OneDrive - Aix-Marseille Université/Année 1 Thèse/Thèse Kossi/Analyse SIR/TestProc/Test/ANALYSES_SUR_LA_V8/BASES_ORIGINALES/Taux_de_reference_France_Final.xlsx"
+
+#ref <- readxl::read_excel(link)
+
+ref <- readxl::read_excel("C:/Users/antoi/Desktop/000_COCCINELLE/DONNEES REGISTRES/DONNEES RNCE/Taux d'incidence pour la France 2000 à 2015/TI_RNCE_20002015.xlsx",
+                               sheet = "TI_RNCE")
+ref %>% 
+  mutate(haz = `TI (cas/million)`/1000000, 
+               Population = `Nb cas`/ haz) %>% 
+  rename(RNCE_GROUPE_ICCC = `groupe ICCC`, 
+         age = `Classe age`,
+         Number_cases = `Nb cas`,
+         year = annee,
+         sex = sexe) %>% 
+  filter(RNCE_GROUPE_ICCC != "LCH") %>% 
+  dplyr::select(sex, year, age, Number_cases, Population) -> mypopref
+
+
+popu <- mypopref[which(!duplicated(mypopref[c("sex", "year", "age")])), 
+                c("sex", "year", "age", "Population")]
+
+mypopref %>% 
+  group_by(sex, year, age) %>% 
+  summarise(Tot_cas = sum(Number_cases)) -> cases
+
+
+popu %>% 
+  group_by(sex, year, age) %>% 
+  summarise(Tot_Pers_year = sum(Population)) -> Pers.year
+
+
+
+my.pop.ref <- inner_join(Pers.year, cases) %>% 
+  mutate(Rate=Tot_cas/Tot_Pers_year)
+
+rm(mypopref, popu, cases)
+
+colnames(my.pop.ref) <- c("sex", "year", "age", "Population", "Number_cases", "Rate")
+
+```
+
+
+```{r}
+glimpse(my.pop.ref)
+head(my.pop.ref)
+```
+
+Overview of *my.pop.ref* dataset : 
+```{r echo=FALSE}
+DT::datatable(my.pop.ref, filter = 'top', options = list(pageLength = 5, autoWidth = TRUE))
+```
+
+
+### Summarize the cohort data
+<!---
+```{r}
+mySIR %>% 
+  group_by(sex, year, age) %>% 
+  summarise(Pers.years = sum(Follow_up)) -> mySIR.Pers.years # To calculate Person-time for each sex, year and age group strata
+
+
+mySIR %>% 
+  group_by(sex, year, age) %>% 
+  summarise(Observed = sum(status)) -> mySIR.total.events #  To calculate total number of observed events recorded in each sex, year and age group strata
+mySIR.summarized <- inner_join(mySIR.Pers.years, mySIR.total.events)
+
+```
+
+```{r include=FALSE}
+sum(mySIR.total.events$Observed)
+rm(mySIR.Pers.years, mySIR.total.events)
+```
+
+Summarizing our cohort data help us to have a table like the [Table 1](Table1).
+
+```{r Table4, echo=FALSE}
+mySIR.summarized[1:10, ] %>%
+  kbl(caption = "Table 4: Summarized cohort data") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+The *Observed* column presents the total number of observed events recorded and the *Pers.years* column presents the total number of person-time recorded in each sex, year and age group strata.
+--->
+
+
+We can also obtain the summary by using the function *lexpand* of the package *popEpi* which allows quickly summary of cohort data. 
+
+```{r}
+cohort_lex <- dplyr::select(mySIR, -c("age", "age_exit"))
+lex.sir <- lexpand(cohort_lex,
+                   birth = birth_date,
+                   entry = entry_date,
+                   exit = exit_date,
+                   status = status==1,
+                   breaks = list(fot=0:20, # cut the follow-up time in periods of one year
+                                 age=c(0, 1, 5, 10, 15, 20), # cut the age at exit in subgroups, coded 1 for <1 year, 2 for 1 to 4 years, 3 for 5 to 9 years, 4 for 10 to 14 years and 5 for >= 15 years old. 
+                                 per=2000:2020), # To cut the calendar year in periods of one year. You can choose also to cut in subgroups of 5 or 10 years 
+                   aggre = list(sex,
+                               age,
+                               year=per)# rename the per variable in year as in the population data
+                   )
+glimpse(lex.sir)
+```
+
+The object *lex.sir* is an aggregated cohort data. The original cohort data *mySIR* is splited by the function *lexpand* into to subintervals of time over calendar time (year), age, and follow-up time (fot) with given time breaks using *splitMulti*.
+lex.sir
+
+In the *lex.sir* object, the  *from0to1* column represents the total number of observed events recorded and the *pyrs* column represents the total number of person-time recorded in each sex, year and age group strata.
+
+
+## 2: First Example of SIR computation
+
+Since we computed our cohort data and population reference data similar to tables 1 and 2, we can now easily calculate the SIR in our cohort according to the first equation.
+
+Remember that both the population reference data *my.pop.ref* and the cohort data *lex.sir* should contain the same column names with the same classes and the same codifications for at least the variables of adjustment (sex, age, year).
+
+
+- Calculate the expected value
+
+<!---
+```{r eval=FALSE, include=FALSE}
+mySIR.summarized$year = as.numeric(as.character(mySIR.summarized$year))
+mySIR.summarized$age = as.numeric(as.character(mySIR.summarized$age))
+#data.sir <- inner_join(mySIR.summarized, my.pop.ref[ , c("sex", "year", "age", "Rate")])
+data.sir <- merge(mySIR.summarized, my.pop.ref[ , c("sex", "year", "age", "Rate")], by=c("sex", "year", "age"), all.x = TRUE) # To merge the cohort data with the population rate
+
+data.sir$Expected = data.sir$Pers.years*data.sir$Rate
+```
+--->
+
+```{r include=FALSE}
+lex.sir%<>% 
+  mutate(age=ifelse(age==0, 1, 
+                     ifelse(age==1, 2,
+                            ifelse(age==5, 3, 
+                                   ifelse(age==10, 4, 
+                                          ifelse(age==15, 5, NA)))))) 
+```
+
+To calculate the SIRs, we will now merge by "sex", "year" and "age", the population reference data *my.pop.ref* and the cohort data *lex.sir* and then create a new column "Expected" as the Rate that multiply person-time.
+
+```{r echo=TRUE}
+lex.sir.final <- merge(lex.sir, my.pop.ref[ , c("sex", "year", "age", "Rate")],
+                  by=c("sex", "year", "age"), all.x=TRUE)
+lex.sir.final$Expected <- lex.sir.final$Rate*lex.sir.final$pyrs
+
+```
+
+Now since we have the "Observed" and "Expected" columns ready in our dataset, we can calculate the overall SIR as the sum of "Observed" divided by the sum of "Expected".
+
+- Overall SIR
+```{r echo=TRUE}
+sum(lex.sir.final$from0to1, na.rm = TRUE)/sum(lex.sir.final$Expected, na.rm = TRUE) # Exclude NA values
+```
+
+We can also calculate SIRs in different ways and for different variables as follow :
+
+- SIRs by gender 
+```{r echo=TRUE}
+lex.sir.final %>% 
+  group_by(sex) %>% 
+  summarise(O=sum(from0to1),
+            E=sum(Expected, na.rm = TRUE),
+            sir_sex=sum(from0to1)/sum(Expected, na.rm = TRUE))
+
+```
+
+- SIRs by age group 
+```{r echo=TRUE}
+lex.sir.final %>% 
+  group_by(age) %>% 
+  summarise(O=sum(from0to1),
+            E=sum(Expected, na.rm = TRUE),
+            sir_age=sum(from0to1)/sum(Expected, na.rm = TRUE))
+
+```
+
+- SIRs by calendar year 
+```{r echo=TRUE}
+
+lex.sir.final %>% 
+  group_by(year) %>% 
+  summarise(O=sum(from0to1),
+            E=sum(Expected, na.rm = TRUE),
+            sir_year=sum(from0to1)/sum(Expected, na.rm = TRUE))
+```
+
+
+
+## 3: Second Example of SIR computation
+
+Since observed cases in the cohort are a typical case of Poisson distribution, Poisson model can be used to estimate the SIRs as follow:
+
+- Overall SIR
+
+```{r}
+fit=glm(from0to1~offset(log(Expected)), data=lex.sir.final, family = "poisson")
+eform(fit)
+```
+
+
+- SIRs by gender
+
+```{r echo=TRUE}
+fit=glm(from0to1[sex==1]~offset(log(Expected[sex==1])), data=lex.sir.final, family = "poisson") # for males
+eform(fit)
+
+fit=glm(from0to1[sex==2]~offset(log(Expected[sex==2])), data=lex.sir.final, family = "poisson") # females
+eform(fit)
+```
+
+<font color=green > 
+**Using Poisson regression, the SIRs are little bit reduced (underestimated). But I would not be able to explain why do we have such difference.**
+</font> 
+
+
+We can also use Poisson test to compute our SIRs
+
+- By gender
+```{r echo=TRUE}
+by(lex.sir.final, lex.sir.final$sex, function(data) poisson.test(sum(data$from0to1), sum(data$Expected, na.rm = TRUE))) 
+
+```
+
+- By age group
+```{r echo=TRUE}
+by(lex.sir.final, lex.sir.final$age, function(data) poisson.test(sum(data$from0to1), sum(data$Expected, na.rm = TRUE)))
+
+```
+
+- By year
+
+```
+by(lex.sir.final, lex.sir.final$year, function(data) poisson.test(sum(data$from0to1), sum(data$Expected, na.rm = TRUE)))
+```
+
+
+## 4: Third example of SIR computation
+
+SIR using the function *sir* of the *popEPi* package:
+
+- by sex
+```{r echo=TRUE}
+sr <- popEpi::sir(lex.sir.final, coh.obs = 'from0to1',
+          coh.pyrs = 'pyrs',
+          ref.data = my.pop.ref[ , c("sex", "year", "age", "Rate")],
+          ref.rate = Rate,
+          print = c("sex"),
+          adjust = c("age", "sex", "year"),
+          test.type = "homogeneity",
+          conf.type = "wald",
+          conf.level = 0.95, EAR = F)
+
+
+sr
+```
+
+- by age group
+
+```{r echo=TRUE}
+sr <- popEpi::sir(lex.sir.final, coh.obs = 'from0to1',
+          coh.pyrs = 'pyrs',
+          ref.data = my.pop.ref[ , c("sex", "year", "age", "Rate")],
+          ref.rate = Rate,
+          print = c("age"),
+          adjust = c("age", "sex", "year"),
+          test.type = "homogeneity",
+          conf.type = "wald",
+          conf.level = 0.95, EAR = F)
+
+
+sr
+```
+
+
+
+
+
+
+
+
