@@ -1,0 +1,10 @@
+name: "Kossi_website"
+navbar:
+  title: "Research page"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "About"
+      href: about.html
+    - text: tutorials
+      href: sir_smr_with_r.html
