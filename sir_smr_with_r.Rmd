@@ -21,15 +21,18 @@ devtools::install_github("haozhu233/kableExtra")
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+```{r include=FALSE}
+library(DiagrammeR)
+library(kableExtra)
+```
+
 
 ```{r message=FALSE, warning=FALSE}
 rm(list=ls())
-library(kableExtra)
 library(magrittr)
 library(dplyr)
 library(tidyverse)
 library(popEpi)
-library(DiagrammeR)
 library(biostat3)
 library(Epi)
 ```

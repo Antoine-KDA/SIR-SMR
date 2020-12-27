@@ -1,5 +1,5 @@
 ---
-title: "Dr Tony"
+title: "SIR Analysis with R"
 ---
 
 More about this website.

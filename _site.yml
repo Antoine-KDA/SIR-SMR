@@ -1,10 +1,6 @@
-name: "Kossi_website"
+name: "Standardized Incidence Ratio (SIR) using R"
 navbar:
-  title: "Research page"
+  title: "SIR/SMR"
   left:
-    - text: "Home"
-      href: index.html
-    - text: "About"
-      href: about.html
-    - text: tutorials
+    - text: "Implementation on R"
       href: sir_smr_with_r.html
