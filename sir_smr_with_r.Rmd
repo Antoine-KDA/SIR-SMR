@@ -42,7 +42,7 @@ library(Epi)
 
 Standardized Incidence Ratio (SIR) or Standardized Mortality Ratio (SMR) are common measure of event occurrence in epidemiology. They are used to compare the occurrence of an event in a cohort to that observed in a given population called reference population.  
 SIR or SMR help the investigators to have a global idea on the occurrence of the event of interest in the followed population (the cohort).
-They are an indirect method of adjustment for a confounding factors (age, sex, calendar year etc.) that describes in numerical terms how the cohort average experience of the event during the follow-up compared with that of the reference population as a whole. A $SIR=2$ means that the occurrence of the event event in the cohort is 2 times higher than what is expected in the reference population. But caution, this does not mean any causality in regard of a give exposure in the cohort or a given risk factor for which the cohort is followed for.
+They are an indirect method of adjustment that describe in numerical term how the cohort average experience of the event during the follow-up compared with that of the reference population as a whole. E.g. a $SIR=2$ means that the occurrence of the event event in the cohort is 2 times higher than what is expected in the reference population. But caution, this does not mean any causality in regard of a give exposure in the cohort or a given risk factor for which the cohort is followed for.
 
 Mathematically SIR (SMR) is the ratio of observed events and expected events: 
 
@@ -52,11 +52,11 @@ where $D$ is the observed events in the cohort population and $E$ is the expecte
 
 Observed events are the absolute number of events that occurred in the cohort during the follow up.
 
-The expected number of events are derived by multiplying the cohort person-years with reference **population rate**. The **population rate** should be stratified or adjusted by confounding factors (age or age group, gender, calendar period etc.). The reference **population rate** in strata $i$ ($\lambda_i$) is defined as: 
+The expected number of events are derived by multiplying the cohort person-years with the reference **population rate**. The **population rate** should be stratified or adjusted by confounding factors (age or age group, gender, calendar period etc.). The reference **population rate** in strata $i$ ($\lambda_i$) is defined as: 
 $$\lambda_i = \frac{d_i}{n_i}$$ 
 where $d_i$ is the total observed events and $n_i$ is the total observed person years (or the size of the population) in the $i$th strata of the reference population.
 
-Univariate confidence intervals are based on exact values of Poisson distribution and the formula for p-value is $$ \chi^2 = \frac{ (|O - E| -0.5)^2 }{E}. $$ Modeled SIR is a Poisson regression model with log-link and cohorts person-years as a offset (we will come to that in the next sections).
+Univariate confidence intervals are based on exact values of Poisson distribution and the formula for p-value is $$ \chi^2 = \frac{ (|O - E| -0.5)^2 }{E} $$ Modeled SIR is a Poisson regression model with log-link and cohorts person-years as an offset (we will come to that in the next sections).
 
 Let's have a quick look to some examples of cohort and reference data:
 
@@ -95,7 +95,7 @@ cohort %>%
   kbl(caption = "Table 1: Example of cohort data") %>%
   kable_classic(full_width = F, html_font = "Cambria")
 ```
-In this first example @\ref(table:Table1): 
+In this first example [Table 1](table:Table1): 
 
   + *age_group* is the age group (confounding factor) for adjustment. Here we have only one confounding factor but feel free to add any other factors (age, gender, socio-economic factors, location, years etc.) you think necessary for your analyses and on which yours SIR/SMR will be adjusted. 
   + The *Number_events* is the total number of events observed in the cohort by strata.
@@ -219,7 +219,21 @@ These are variables from the *mySIR* database :
 ```{r include=FALSE}
 load("~/OneDrive - Aix-Marseille Université/Année 1 Thèse/Thèse Kossi/Analyse SIR/Analyse_SIR_V3_Article_Cohorte_Profile/base_these_kossi.Rdata")
 
-mySIR=base_sans_doublon[ , c("sexe", "ddn", "date_entree", "dd_exit_suivi", "statut")]
+SIR=base_sans_doublon[ , c("ID_ALL", "sexe", "ddn", "date_entree", "dd_exit_suivi", "statut")]
+
+f <- function(x, n, t, ...){
+  s=NULL
+  for(i in 1:t){
+    y=sample(x=x, size=n, replace = FALSE, prob = NULL)
+    s=c(s, y)
+  }
+  s
+}
+
+num=f(SIR$ID_ALL, n=5000, t=5, replace=T)
+
+mySIR <- SIR[SIR$ID_ALL %in% num, c("sexe", "ddn", "date_entree", "dd_exit_suivi", "statut")] 
+
 colnames(mySIR) <- c("sex", "birth_date", "entry_date", "exit_date", "status")
 mySIR %<>% 
   mutate(sex=ifelse(sex=="Male", 1, 2))
