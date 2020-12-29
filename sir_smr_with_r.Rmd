@@ -222,6 +222,7 @@ load("~/OneDrive - Aix-Marseille Université/Année 1 Thèse/Thèse Kossi/Analys
 SIR=base_sans_doublon[ , c("ID_ALL", "sexe", "ddn", "date_entree", "dd_exit_suivi", "statut")]
 
 f <- function(x, n, t, ...){
+  set.seed(123456789)
   s=NULL
   for(i in 1:t){
     y=sample(x=x, size=n, replace = FALSE, prob = NULL)

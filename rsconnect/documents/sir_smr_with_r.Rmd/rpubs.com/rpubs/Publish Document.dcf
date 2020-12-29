@@ -4,7 +4,7 @@ username:
 account: rpubs
 server: rpubs.com
 hostUrl: rpubs.com
-appId: https://api.rpubs.com/api/v1/document/707725/eb765c85df114284a1df3fafb5370f6d
-bundleId: https://api.rpubs.com/api/v1/document/707725/eb765c85df114284a1df3fafb5370f6d
-url: http://rpubs.com/antoine-kossi/707725
-when: 1609250225.91639
+appId: https://api.rpubs.com/api/v1/document/708412/7a93e4cc8bee451bafb79170bd170578
+bundleId: https://api.rpubs.com/api/v1/document/708412/7a93e4cc8bee451bafb79170bd170578
+url: http://rpubs.com/publish/claim/708412/ae26d056dd3b426f9a610c61bbc631b8
+when: 1609252649.20138
